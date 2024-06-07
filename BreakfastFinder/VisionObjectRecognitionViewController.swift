@@ -1,9 +1,9 @@
 /*
-See LICENSE folder for this sample’s licensing information.
-
-Abstract:
-Contains the object recognition view controller for the Breakfast Finder.
-*/
+ See LICENSE folder for this sample’s licensing information.
+ 
+ Abstract:
+ Contains the object recognition view controller for the Breakfast Finder.
+ */
 
 import UIKit
 import AVFoundation
@@ -12,56 +12,59 @@ import Vision
 class VisionObjectRecognitionViewController: ViewController {
     
     private var detectionOverlay: CALayer! = nil
+    private var goodFrameCount: Int = 0
+    private let goodFrameCountThreshold: Int = 50
     
-    // Vision parts
     private var requests = [VNRequest]()
     
-    @discardableResult
-    func setupVision() -> NSError? {
-        // Setup Vision parts
+    func setupVision() {
         let error: NSError! = nil
         
-        guard let modelURL = Bundle.main.url(forResource: "ObjectDetector", withExtension: "mlmodelc") else {
-            return NSError(domain: "VisionObjectRecognitionViewController", code: -1, userInfo: [NSLocalizedDescriptionKey: "Model file is missing"])
+        let objectRecognition = VNDetectRectanglesRequest { (request, error) in
+            if let error = error {
+                return
+            }
+            
+            DispatchQueue.main.async {
+                if let results = request.results {
+                    self.drawVisionRequestResults(results)
+                }
+            }
         }
-        do {
-            let visionModel = try VNCoreMLModel(for: MLModel(contentsOf: modelURL))
-            let objectRecognition = VNCoreMLRequest(model: visionModel, completionHandler: { (request, error) in
-                DispatchQueue.main.async(execute: {
-                    // perform all the UI updates on the main queue
-                    if let results = request.results {
-                        self.drawVisionRequestResults(results)
-                    }
-                })
-            })
-            self.requests = [objectRecognition]
-        } catch let error as NSError {
-            print("Model loading went wrong: \(error)")
-        }
-        
-        return error
+        objectRecognition.maximumObservations = 1
+        objectRecognition.quadratureTolerance = 15
+        objectRecognition.minimumAspectRatio = 0.4
+        objectRecognition.maximumAspectRatio = 0.48
+        objectRecognition.minimumSize = 0.45
+        self.requests = [objectRecognition]
     }
     
     func drawVisionRequestResults(_ results: [Any]) {
         CATransaction.begin()
         CATransaction.setValue(kCFBooleanTrue, forKey: kCATransactionDisableActions)
-        detectionOverlay.sublayers = nil // remove all the old recognized objects
-        for observation in results where observation is VNRecognizedObjectObservation {
-            guard let objectObservation = observation as? VNRecognizedObjectObservation else {
-                continue
+        detectionOverlay.sublayers = nil
+        guard results.count <= 1 else {
+            return
+        }
+        
+        if results.isEmpty {
+            goodFrameCount = 0
+        }
+        else {
+            guard let rectangleObservation = results[0] as? VNRectangleObservation else {
+                return
             }
-            // Select only the label with the highest confidence.
-            let topLabelObservation = objectObservation.labels[0]
-            let objectBounds = VNImageRectForNormalizedRect(objectObservation.boundingBox, Int(bufferSize.width), Int(bufferSize.height))
-            
+            goodFrameCount += 1
+            print(goodFrameCount)
+            let objectBounds = VNImageRectForNormalizedRect(rectangleObservation.boundingBox, Int(bufferSize.width), Int(bufferSize.height))
             let shapeLayer = self.createRoundedRectLayerWithBounds(objectBounds)
-            
             let textLayer = self.createTextSubLayerInBounds(objectBounds,
-                                                            identifier: topLabelObservation.identifier,
-                                                            confidence: topLabelObservation.confidence)
+                                                            identifier: "rectangle",
+                                                            confidence: rectangleObservation.confidence)
             shapeLayer.addSublayer(textLayer)
             detectionOverlay.addSublayer(shapeLayer)
         }
+        
         self.updateLayerGeometry()
         CATransaction.commit()
     }
@@ -76,6 +79,12 @@ class VisionObjectRecognitionViewController: ViewController {
         let imageRequestHandler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: exifOrientation, options: [:])
         do {
             try imageRequestHandler.perform(self.requests)
+            
+            // Capture image when goodFrameCount reaches the threshold
+            if goodFrameCount >= goodFrameCountThreshold {
+                saveCurrentFrame(sampleBuffer: sampleBuffer)
+                goodFrameCount = 0 // Reset the count after saving the image
+            }
         } catch {
             print(error)
         }
@@ -155,4 +164,25 @@ class VisionObjectRecognitionViewController: ViewController {
         return shapeLayer
     }
     
+    func saveCurrentFrame(sampleBuffer: CMSampleBuffer) {
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+            return
+        }
+        
+        // Create CIImage from CVPixelBuffer
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        
+        // Create a CIContext
+        let context = CIContext()
+        
+        // Create CGImage from CIImage
+        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
+            return
+        }
+        
+        // Create UIImage from CGImage
+        let uiImage = UIImage(cgImage: cgImage)
+        
+        
+    }
 }
