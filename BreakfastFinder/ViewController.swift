@@ -94,6 +94,10 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         }
     }
     
+    func stopCaptureSession() {
+        self.session.stopRunning()
+    }
+    
     // Clean up capture setup
     func teardownAVCapture() {
         previewLayer.removeFromSuperlayer()

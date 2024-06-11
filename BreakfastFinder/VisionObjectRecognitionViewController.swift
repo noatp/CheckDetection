@@ -13,21 +13,57 @@ class VisionObjectRecognitionViewController: ViewController {
     
     private var detectionOverlay: CALayer! = nil
     private var goodFrameCount: Int = 0
-    private let goodFrameCountThreshold: Int = 50
+    private let goodFrameCountThreshold: Int = 30
     
     private var requests = [VNRequest]()
+    private var previewImageView: UIImageView = {
+        let imageView = UIImageView()
+        imageView.contentMode = .scaleAspectFill
+        imageView.isHidden = true
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        return imageView
+    }()
+    private var flashBackground: UIView = {
+        let view = UIView()
+        view.backgroundColor = .white
+        view.isHidden = true
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        setupViews()
+    }
+    
+    func setupViews() {
+        self.view.addSubview(flashBackground)
+        self.view.addSubview(previewImageView)
+        
+        NSLayoutConstraint.activate([
+            previewImageView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            previewImageView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            previewImageView.topAnchor.constraint(equalTo: view.topAnchor),
+            previewImageView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            
+            flashBackground.topAnchor.constraint(equalTo: view.topAnchor),
+            flashBackground.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            flashBackground.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            flashBackground.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+        ])
+        
+    }
     
     func setupVision() {
-        let error: NSError! = nil
-        
-        let objectRecognition = VNDetectRectanglesRequest { (request, error) in
+        let objectRecognition = VNDetectRectanglesRequest { [weak self] (request, error) in
             if let error = error {
+                print(error)
                 return
             }
             
             DispatchQueue.main.async {
                 if let results = request.results {
-                    self.drawVisionRequestResults(results)
+                    self?.drawVisionRequestResults(results)
                 }
             }
         }
@@ -55,11 +91,10 @@ class VisionObjectRecognitionViewController: ViewController {
                 return
             }
             goodFrameCount += 1
-            print(goodFrameCount)
             let objectBounds = VNImageRectForNormalizedRect(rectangleObservation.boundingBox, Int(bufferSize.width), Int(bufferSize.height))
             let shapeLayer = self.createRoundedRectLayerWithBounds(objectBounds)
             let textLayer = self.createTextSubLayerInBounds(objectBounds,
-                                                            identifier: "rectangle",
+                                                            identifier: "Good frame count: \(goodFrameCount)",
                                                             confidence: rectangleObservation.confidence)
             shapeLayer.addSublayer(textLayer)
             detectionOverlay.addSublayer(shapeLayer)
@@ -82,8 +117,9 @@ class VisionObjectRecognitionViewController: ViewController {
             
             // Capture image when goodFrameCount reaches the threshold
             if goodFrameCount >= goodFrameCountThreshold {
-                saveCurrentFrame(sampleBuffer: sampleBuffer)
-                goodFrameCount = 0 // Reset the count after saving the image
+                displayCurrentFrame(sampleBuffer: sampleBuffer)
+                goodFrameCount = 0
+                stopCaptureSession()
             }
         } catch {
             print(error)
@@ -140,7 +176,7 @@ class VisionObjectRecognitionViewController: ViewController {
         let textLayer = CATextLayer()
         textLayer.name = "Object Label"
         let formattedString = NSMutableAttributedString(string: String(format: "\(identifier)\nConfidence:  %.2f", confidence))
-        let largeFont = UIFont(name: "Helvetica", size: 24.0)!
+        let largeFont = UIFont(name: "Helvetica", size: 13.0)!
         formattedString.addAttributes([NSAttributedString.Key.font: largeFont], range: NSRange(location: 0, length: identifier.count))
         textLayer.string = formattedString
         textLayer.bounds = CGRect(x: 0, y: 0, width: bounds.size.height - 10, height: bounds.size.width - 10)
@@ -164,7 +200,9 @@ class VisionObjectRecognitionViewController: ViewController {
         return shapeLayer
     }
     
-    func saveCurrentFrame(sampleBuffer: CMSampleBuffer) {
+    func displayCurrentFrame(sampleBuffer: CMSampleBuffer) {
+        print("Image displayed in preview layer.")
+
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
             return
         }
@@ -180,9 +218,35 @@ class VisionObjectRecognitionViewController: ViewController {
             return
         }
         
-        // Create UIImage from CGImage
-        let uiImage = UIImage(cgImage: cgImage)
+        // Create UIImage from CGImage with proper orientation
+        let capturedImage = UIImage(cgImage: cgImage, scale: 1.0, orientation: .right)
         
-        
+        DispatchQueue.main.async {
+            self.flashBackground.isHidden = false
+            self.previewImageView.image = capturedImage
+            self.previewImageView.alpha = 0.0
+            self.previewImageView.isHidden = false
+            
+            UIView.animate(withDuration: 0.1, animations: {
+                self.previewImageView.alpha = 0.0
+            }, completion: { [weak self] _ in
+                self?.previewImageView.image = capturedImage
+                UIView.animate(withDuration: 0.3, animations: { [weak self] in
+                    self?.previewImageView.alpha = 1.0
+                }, completion: { [weak self] _ in
+                    let textRecognitionViewController = TextRecognitionViewController(capturedImage: capturedImage)
+                    textRecognitionViewController.presentationController?.delegate = self
+                    self?.present(textRecognitionViewController, animated: true)
+                })
+            })
+        }
+    }
+}
+
+extension VisionObjectRecognitionViewController: UIAdaptivePresentationControllerDelegate {
+    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        previewImageView.isHidden = true
+        flashBackground.isHidden = true
+        startCaptureSession()
     }
 }
