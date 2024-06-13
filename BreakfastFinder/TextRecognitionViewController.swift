@@ -85,7 +85,7 @@ class TextRecognitionViewController: UIViewController {
     
     func findAmount(in text: String) -> String? {
             // Define a regular expression pattern to match amounts
-            let pattern = "(?<=\\bAmount:?\\s?)\\d{1,3}(?:,\\d{3})*(?:\\.\\d{2})?|\\d{1,3}(?:,\\d{3})*(?:\\.\\d{2})?(?=\\s*Amount\\b)|\\d{1,3}(?:,\\d{3})*(?:\\.\\d{2})?"
+            let pattern = "\\$\\s*\\*?\\s*\\d{1,3}(?:,\\d{3})*(?:\\.\\d{2})?"
             
             do {
                 let regex = try NSRegularExpression(pattern: pattern, options: .caseInsensitive)
