@@ -82,4 +82,24 @@ class TextRecognitionViewController: UIViewController {
             print("Failed to perform text recognition: \(error)")
         }
     }
+    
+    func findAmount(in text: String) -> String? {
+            // Define a regular expression pattern to match amounts
+            let pattern = "(?<=\\bAmount:?\\s?)\\d{1,3}(?:,\\d{3})*(?:\\.\\d{2})?|\\d{1,3}(?:,\\d{3})*(?:\\.\\d{2})?(?=\\s*Amount\\b)|\\d{1,3}(?:,\\d{3})*(?:\\.\\d{2})?"
+            
+            do {
+                let regex = try NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+                let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: text.utf16.count))
+                
+                for match in matches {
+                    if let range = Range(match.range, in: text) {
+                        return String(text[range])
+                    }
+                }
+            } catch {
+                print("Failed to create regular expression: \(error)")
+            }
+            
+            return nil
+        }
 }
